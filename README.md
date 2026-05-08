@@ -20,14 +20,6 @@ docker compose up -d
 
 Prometheus is at <http://localhost:9090>. The `resolver` target should be UP after a scrape or two.
 
-For traffic:
-
-```sh
-./loadgen.sh
-```
-
-Weighted mix of valid and invalid requests, with a periodic parallel burst so the inflight gauge isn't always at zero.
-
 ## Endpoints
 
 | Request | Result |
@@ -174,7 +166,7 @@ Pipe through `jq` for pretty-printing: `go run . | jq .`. In production this wou
 
 The handler accepts an optional `delay` param (anything `time.ParseDuration` accepts: `50ms`, `500us`, `2s`) that sleeps inside the timed window. Useful for confirming the histogram tracks what you'd expect.
 
-Stop `loadgen.sh` first so the slow loop isn't diluted by fast traffic. Then drive sustained slow traffic:
+Drive sustained slow traffic:
 
 ```sh
 while true; do
