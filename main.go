@@ -49,7 +49,8 @@ var (
 		Help: "Duration of /resolve requests in seconds, partitioned by result.",
 		// Custom buckets: in-memory map lookups are sub-millisecond, so the
 		// default Prometheus buckets (starting at 5ms) would not produce reliable
-		// results
+		// results (I started with100 microseconds was way too high and always showing
+		// 95 microseconds for p95, and 99 microseconds for p99, so had to lower this)
 		Buckets: []float64{.000005, .00001, .00002, .00005, .0001, .0005, .001, .005, .01, .05, .1, .5, 1},
 
 	}, []string{"result"})
