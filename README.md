@@ -180,10 +180,9 @@ Note the values, then:
 curl -s 'localhost:8080/resolve?code=prom01&delay=200ms'
 ```
 
-Re-run the query. Every bucket with `le >= 0.5` is up by 1 (200ms fits in 500ms, 1s, and +Inf). Buckets with `le <= 0.1` are unchanged (200ms doesn't fit in 100ms). That's the cumulative layout `histogram_quantile` reads when computing percentiles.
+Re-run the query.
 
-The bookkeeping counters also move:
-
+These also will go up
 ```promql
 resolver_request_duration_seconds_count{result="success"}
 resolver_request_duration_seconds_sum{result="success"}
@@ -197,7 +196,7 @@ Try a delay that overflows:
 curl -s 'localhost:8080/resolve?code=prom01&delay=2s'
 ```
 
-Only `le="+Inf"` increments since 2s exceeds every finite bucket. That's what `+Inf` is for.
+Only `le="+Inf"` increments
 
 ## Stop
 
