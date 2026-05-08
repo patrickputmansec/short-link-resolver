@@ -164,38 +164,38 @@ Pipe through `jq` for pretty-printing: `go run . | jq .`. In production this wou
 
 ## Verifying the histogram
 
-The handler accepts an optional `delay` param (anything `time.ParseDuration` accepts: `50ms`, `500us`, `2s`) that sleeps inside the timed window. Useful for confirming the histogram tracks what you'd expect.
+The handler accepts an optional `delay` param (anything `time.ParseDuration` accepts: `50ms`, `200ms`, `2s`) that sleeps inside the timed window. Single curls are enough to see the histogram do its job — no rolling windows, no sustained traffic. Just look at the cumulative counters before and after each request.
 
-Drive sustained slow traffic:
+In the Prometheus UI, switch to **Table view** and run:
+
+```promql
+resolver_request_duration_seconds_bucket{result="success"}
+```
+
+Note the current bucket counts. Then fire one slow request:
 
 ```sh
-while true; do
-  curl -s -o /dev/null 'localhost:8080/resolve?code=prom01&delay=50ms'
-done
+curl -s 'localhost:8080/resolve?code=prom01&delay=200ms'
 ```
 
-Wait ~30 seconds for the rate window to fill, then run both queries side-by-side in the Prometheus UI.
+Re-execute the query. Every bucket with `le >= 0.5` increments by exactly 1 (because 200ms ≤ 500ms, 1s, and +Inf). Buckets with `le <= 0.1` are unchanged (because 200ms > 100ms). That cumulative pattern — observation lands in the smallest matching bucket and ripples up — is how `histogram_quantile` later interpolates percentiles.
 
-Mean latency in ms (reads ~50ms — bucket-independent):
+You can also watch the bookkeeping counters:
 
 ```promql
-1000 * (
-  rate(resolver_request_duration_seconds_sum{result="success"}[1m])
-  /
-  rate(resolver_request_duration_seconds_count{result="success"}[1m])
-)
+resolver_request_duration_seconds_count{result="success"}
+resolver_request_duration_seconds_sum{result="success"}
 ```
 
-p95 latency in ms (reads higher than the truth — `histogram_quantile` interpolates linearly across the bucket containing all the observations):
+`_count` increments by 1 with each curl. `_sum` grows by the injected delay in seconds (~0.2 for `delay=200ms`). The mean is computed from these two — `_sum / _count`.
 
-```promql
-1000 * histogram_quantile(
-  0.95,
-  sum by (le) (rate(resolver_request_duration_seconds_bucket{result="success"}[1m]))
-)
+Try `delay=2s` next:
+
+```sh
+curl -s 'localhost:8080/resolve?code=prom01&delay=2s'
 ```
 
-The mean tracks the truth because every observation contributes to `_sum / _count` directly. The p95 overshoots because all 50ms observations land in one bucket and the interpolation assumes a uniform distribution within the bucket. Real production traffic spreads across many buckets and the artifact disappears.
+Only `le="+Inf"` increments, because 2s exceeds every finite bucket. That's the failure mode the `+Inf` bucket exists to catch.
 
 Bump the delay (`500ms`, `2s`) to confirm both queries respond at multiple scales.
 
