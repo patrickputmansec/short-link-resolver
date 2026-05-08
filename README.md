@@ -104,10 +104,13 @@ resolver_resolutions_total
 
 ### 3. Error counter
 
-Trigger one (well-formed code that isn't seeded → `not_found`):
+Trigger one of each reason:
 
 ```sh
-curl -s 'localhost:8080/resolve?code=prom03'
+curl -s 'localhost:8080/resolve?code=prom03'   # not_found     (well-formed but unseeded)
+curl -s 'localhost:8080/resolve?code=abc!1'    # bad_format    (regex rejects non-alphanumeric)
+curl -s 'localhost:8080/resolve?code=toolong'  # bad_format    (regex rejects wrong length)
+curl -s 'localhost:8080/resolve'               # missing_code  (no code param)
 ```
 
 Top-3 most active error reasons:
