@@ -1,6 +1,6 @@
 # Short-Link Resolver
 
-Small HTTP service that resolves a short code to a URL. Built for the Chronosphere take-home; the point is the instrumentation, not the resolver.
+Small HTTP service that maps a 6-char code to a URL. Built for the Chronosphere take-home; the metrics are the point.
 
 ## Prerequisites
 
@@ -12,13 +12,13 @@ Go 1.23+ and Docker.
 go run .
 ```
 
-Listens on `:8080`. In another terminal:
+Service runs on `:8080`.
 
 ```sh
 docker compose up -d
 ```
 
-Prometheus is at <http://localhost:9090>. The `resolver` target should be UP after a scrape or two.
+Prometheus is at <http://localhost:9090>. The `resolver` target should show UP after a scrape or two.
 
 ## Endpoints
 
@@ -36,18 +36,18 @@ Prometheus is at <http://localhost:9090>. The `resolver` target should be UP aft
 | Type | Name | Labels |
 |---|---|---|
 | Histogram | `resolver_request_duration_seconds` | `result` |
-| Counter | `resolver_resolutions_total` | — |
+| Counter | `resolver_resolutions_total` | |
 | Counter | `resolver_errors_total` | `reason` |
-| Gauge | `resolver_inflight_requests` | — |
-| Log | structured JSON via `slog` | — |
+| Gauge | `resolver_inflight_requests` | |
+| Log | structured JSON via `slog` | |
 
-Errors are counted from inside the handler with a typed reason, not derived from HTTP status codes. Histogram buckets start at 5µs because lookups are sub-millisecond and the default Prometheus buckets (starting at 5ms) would collapse everything into the smallest one.
+Errors are counted inside the handler with a typed reason rather than derived from HTTP status codes. Histogram buckets start at 5µs since lookups are sub-millisecond; the default buckets start at 5ms and would just collapse everything into the smallest one.
 
 ## Queries
 
-The two essential queries per the assignment are the p95 latency under §1 and the top error reasons under §3. The rest are here so each instrumentation point is demoable on its own.
+The two queries the assignment asks for are the p95 latency under Histogram and the top errors under Error counter. The rest cover the other metric types.
 
-### 1. Histogram (latency)
+### Histogram
 
 p95 in ms:
 
@@ -58,7 +58,7 @@ p95 in ms:
 )
 ```
 
-Mean in ms, computed from `_sum / _count`. Bucket-independent, so it's the right query for sanity-checking that the histogram is recording what you'd expect:
+Mean in ms, computed from `_sum / _count` (no bucket math):
 
 ```promql
 1000 * (
@@ -68,59 +68,61 @@ Mean in ms, computed from `_sum / _count`. Bucket-independent, so it's the right
 )
 ```
 
-Raw bucket counts (Table view shows one row per `le`):
+Raw bucket counts:
 
 ```promql
 resolver_request_duration_seconds_bucket{result="success"}
 ```
 
-### 2. Success counter
+### Success counter
 
-Trigger one (resolves to `https://prometheus.io`):
+A successful curl:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=prom01'
 ```
 
-Successes per second over the last minute:
+Per-second rate:
 
 ```promql
 rate(resolver_resolutions_total[1m])
 ```
 
-Lifetime total (Table view):
+Lifetime total:
 
 ```promql
 resolver_resolutions_total
 ```
 
-### 3. Error counter
+### Error counter
 
-Trigger `not_found` (well-formed but unseeded):
+Trigger curls, one per reason.
+
+`not_found`:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=prom03'
 ```
 
-Trigger `bad_format` (regex rejects non-alphanumeric):
+`bad_format` from invalid chars:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=abc!1'
 ```
 
-Trigger `bad_format` (regex rejects wrong length):
+`bad_format` from wrong length:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=toolong'
 ```
 
-Trigger `missing_code` (no code param):
+`missing_code`:
 
 ```sh
 curl -s 'localhost:8080/resolve'
 ```
 
-Top-3 most active error reasons:
+Top three by rate:
 
 ```promql
 topk(3, sum by (reason) (rate(resolver_errors_total[5m])))
@@ -132,19 +134,19 @@ Errors per second by reason:
 sum by (reason) (rate(resolver_errors_total[1m]))
 ```
 
-A single reason in isolation:
+One reason on its own:
 
 ```promql
 rate(resolver_errors_total{reason="not_found"}[1m])
 ```
 
-### 4. Gauge (inflight requests)
+### Gauge
 
 ```promql
 resolver_inflight_requests
 ```
 
-Mostly reads 0 because lookups are sub-millisecond. To make it visibly spike, fire a parallel burst with a delay so requests overlap:
+Sits at zero most of the time. To get it to spike, fire 20 parallel curls with a delay so they overlap:
 
 ```sh
 for i in {1..20}; do
@@ -152,52 +154,50 @@ for i in {1..20}; do
 done
 ```
 
-### 5. Log line
+### Log line
 
-Not a PromQL query — `slog` writes JSON to stdout, so look at the terminal running `go run .`. Each request emits one line:
+Not a Prometheus query. `slog` writes JSON to stdout, so the `go run .` terminal shows one line per request:
 
 ```json
 {"time":"2026-05-08T03:24:33Z","level":"INFO","msg":"resolve","code":"prom01","result":"success","target_url":"https://prometheus.io","duration_ms":0}
 ```
 
-Pipe through `jq` for pretty-printing: `go run . | jq .`. In production this would ship to a log aggregator (Loki, Datadog, Splunk) and be queried like a database.
+Pretty-printed: `go run . | jq .`. In production these would ship to Loki, Splunk, or whatever the team uses.
 
 ## Verifying the histogram
 
-The handler accepts an optional `delay` param (anything `time.ParseDuration` accepts: `50ms`, `200ms`, `2s`) that sleeps inside the timed window. Single curls are enough to see the histogram do its job — no rolling windows, no sustained traffic. Just look at the cumulative counters before and after each request.
+The handler accepts an optional `delay` param that sleeps inside the timed section. Anything `time.ParseDuration` accepts works (`50ms`, `200ms`, `2s`). Single curls are enough.
 
-In the Prometheus UI, switch to **Table view** and run:
+Look at the bucket counts in Table view:
 
 ```promql
 resolver_request_duration_seconds_bucket{result="success"}
 ```
 
-Note the current bucket counts. Then fire one slow request:
+Note the values, then:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=prom01&delay=200ms'
 ```
 
-Re-execute the query. Every bucket with `le >= 0.5` increments by exactly 1 (because 200ms ≤ 500ms, 1s, and +Inf). Buckets with `le <= 0.1` are unchanged (because 200ms > 100ms). That cumulative pattern — observation lands in the smallest matching bucket and ripples up — is how `histogram_quantile` later interpolates percentiles.
+Re-run the query. Every bucket with `le >= 0.5` is up by 1 (200ms fits in 500ms, 1s, and +Inf). Buckets with `le <= 0.1` are unchanged (200ms doesn't fit in 100ms). That's the cumulative layout `histogram_quantile` reads when computing percentiles.
 
-You can also watch the bookkeeping counters:
+The bookkeeping counters also move:
 
 ```promql
 resolver_request_duration_seconds_count{result="success"}
 resolver_request_duration_seconds_sum{result="success"}
 ```
 
-`_count` increments by 1 with each curl. `_sum` grows by the injected delay in seconds (~0.2 for `delay=200ms`). The mean is computed from these two — `_sum / _count`.
+`_count` ticks up by 1, `_sum` by the injected delay in seconds (about 0.2 for `delay=200ms`). The mean is derived from these.
 
-Try `delay=2s` next:
+Try a delay that overflows:
 
 ```sh
 curl -s 'localhost:8080/resolve?code=prom01&delay=2s'
 ```
 
-Only `le="+Inf"` increments, because 2s exceeds every finite bucket. That's the failure mode the `+Inf` bucket exists to catch.
-
-Bump the delay (`500ms`, `2s`) to confirm both queries respond at multiple scales.
+Only `le="+Inf"` increments since 2s exceeds every finite bucket. That's what `+Inf` is for.
 
 ## Stop
 
@@ -205,4 +205,4 @@ Bump the delay (`500ms`, `2s`) to confirm both queries respond at multiple scale
 docker compose down
 ```
 
-Ctrl-C the other two terminals.
+Then Ctrl-C the other terminals.
