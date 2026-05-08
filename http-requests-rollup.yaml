@@ -1,0 +1,21 @@
+api_version: v1/config
+kind: RollupRule
+
+spec:
+  slug: http_requests_total_without_pod_instance
+  name: http requests total without pod and instance
+  filters:
+    - name: __name__
+      value_glob: http_requests_total
+    - name: env
+      value_glob: production
+  metric_name: '{{ .MetricName }}:without_pod_instance'
+  metric_type: COUNTER
+  aggregation: SUM
+  interval: 60s
+  label_policy:
+    discard:
+      - pod
+      - instance
+  drop_raw: true
+  mode: ENABLED

@@ -1,0 +1,74 @@
+Architectural scaling notes
+
+1. You don’t want to average percentiles across different endpoints.  For example, 10 requests to target 1, 10 request to target 2, if you calculate the p95 of them individually and average them, this can cause huge problems, for instance if one has a p95 of 10ms, and one has a p95 of 100ms, averaged they’re 50ms, which is inaccurate.  Instead, take the buckets across both nodes, and calculate the p95 from that total, to find the accurate p95 for all nodes.     Service Discovery is used instead of static targets with multiple systems,, and promql operations need to be instance aware.  For example, running a query on a single instance will now introduce multiple responses because prometheus adds instance labels which can mess with alerts if you want to alert on totals. so in this instance you would sum across instances
+
+2. Cardinality Math unbounded labels can not only be added to code, but added in with telemetry libraries or in other places not directly in code.  Prometheus has scrape/series limits which aren’t that good long term since they just show a target as down instead of resolving the problem.  (They drop information and the dashboard goes down until it goes back under the limits)
+    
+3. If you have multiple prometheus (multi cluster, or need multiple prometheus servers for some reason) it doesn’t aggregate properly, for small setups you can have a parent preomethus federate them, but this doesn’t scale well.
+
+
+Observability Tools:
+Metrics:
+	Prometheus
+	grafana
+	datadog
+Logs:
+	Loki - grafana
+	Datadog logs
+	Splunk
+	Cloud watch (aws)
+	Cloud logs (GCP)
+
+Traces:
+	Jaeger
+	Tempo - grafana 
+	Honeycomb
+	Zipkin
+	Datadog apm
+
+
+	Service Mesh (istio/linkerd, etc..): red (metrics) rate errors duration (Requests per second, Error Rate, Latency)
+
+Alerting:
+	goal of alerting is not to detect every anomaly — it’s to reliably detect
+	build alerting primarily around user-facing SLIs and SLOs rather than raw infrastructure metrics alone.
+	Define SLIs for latency, error rate, availability per service
+	Set SLOs like 99.5% of requests succeeded over 30 days
+
+
+Common SLIs:
+	Availability / Success rate
+		successful_requests / total_requests
+		SLO: 99.9% of requests succeed over 30 days
+	Latency
+		p50/p95/p99
+		SLO: 95% of requests complete in < 200ms
+	Error rate
+		5xx_responses / total_requests
+		SLO: Error rate stays below 0.1%
+		alert 30 day budget gone in 2 days, alert
+	Throughput / Traffic
+		requests/sec
+		bytes/sec
+		jobs/sec
+		queue throughput	
+		SLO: System sustains 50k requests/sec without degradation
+	Saturation
+		CPU utilization
+		memory pressure
+		queue depth
+		thread pool exhaustion
+		DB connection pool exhaustion	
+		SLO: CPU utilization remains under 80% for 99% of intervals
+	Durability
+		Objects not lost / total stored objects
+		SLO: 99.999999999% yearly durability Correctness
+	Freshness / Staleness
+		SLO: 95% of events appear in search within 60 seconds
+	
+Google’s “Four Golden Signals”
+Latency:	How long requests take
+Traffic:	Demand on system
+Errors:		Failed requests
+Saturation:	Resource exhaustion
+
