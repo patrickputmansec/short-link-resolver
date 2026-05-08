@@ -84,6 +84,12 @@ resolver_request_duration_seconds_bucket{result="success"}
 
 ### 2. Success counter
 
+Trigger one (resolves to `https://prometheus.io`):
+
+```sh
+curl -s 'localhost:8080/resolve?code=prom01'
+```
+
 Successes per second over the last minute:
 
 ```promql
@@ -97,6 +103,12 @@ resolver_resolutions_total
 ```
 
 ### 3. Error counter
+
+Trigger one (well-formed code that isn't seeded → `not_found`):
+
+```sh
+curl -s 'localhost:8080/resolve?code=prom03'
+```
 
 Top-3 most active error reasons:
 
